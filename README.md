@@ -8,7 +8,7 @@
     The following algorithm gets an input video from a stationary camera or a relatively stable video of a singe moving object.<br>
     The algorithm will extract the background and the object separately - with background substraction.<br>
     You can choose any background you want (image or video) and you will get a new video which combine the object and the new background. <br/> 
-    * Project partner - Daniel Kozoyatov https://github.com/kozoyatov
+    Project partner - Daniel Kozoyatov https://github.com/kozoyatov
   </p>
   <table style="width:100%">
   <tr>
