@@ -1,0 +1,97 @@
+import numpy as np
+import cv2
+from sklearn.neighbors import KernelDensity
+import json
+
+
+def compute_pdf(v_frame,background_mask, foreground_mask):
+
+    #  P(C|F)
+    values = v_frame[foreground_mask == 255][:, np.newaxis]
+    values_domain = np.linspace(0, 255, 256, dtype=np.int)[:, np.newaxis]
+    kde = KernelDensity(kernel='gaussian', bandwidth=0.7).fit(values)
+    log_dens = kde.score_samples(values_domain)
+    density_F = np.exp(log_dens)
+
+    #  P(C|B)
+    values = v_frame[background_mask == 255][:, np.newaxis]
+    values_domain = np.linspace(0, 255, 256, dtype=np.int)[:, np.newaxis]
+    kde = KernelDensity(kernel='gaussian', bandwidth=0.7).fit(values)
+    log_dens = kde.score_samples(values_domain)
+    density_B = np.exp(log_dens)
+
+    return density_F,  density_B
+
+
+def compute_likelihood(v_frame,binary_mask,pdf_f, pdf_b):
+
+    image_pdf_f = np.zeros(v_frame.shape,np.float32)
+    image_pdf_b = np.zeros(v_frame.shape,np.float32)
+
+    P_C_F = pdf_f[v_frame.reshape(-1,1)].reshape(image_pdf_f.shape)
+    P_C_B = pdf_b[v_frame.reshape(-1,1)].reshape(image_pdf_b.shape)
+    denominator = np.add(P_C_F, P_C_B)
+    denominator_copy = np.copy(denominator)
+    denominator_copy[denominator == 0] = 1.0
+    image_pdf_f = np.divide(P_C_F, denominator_copy)
+    image_pdf_b = np.divide(P_C_B, denominator_copy)
+    image_pdf_f[denominator == 0] = 0.0
+    image_pdf_b[denominator == 0] = 0.0
+    image_pdf_f[binary_mask == 0] = 0.0
+    image_pdf_b[binary_mask == 0] = 0.0
+
+    return image_pdf_f, image_pdf_b
+
+
+def alpha(D_f, image_pdf_f, D_b, image_pdf_b):
+
+    # Computing alpha matrix:
+    D_f_gray = D_f
+    D_b_gray = D_b
+    r = -1
+    D_f_gray_copy = np.copy(D_f_gray)
+    D_b_gray_copy = np.copy(D_b_gray)
+    D_f_gray_copy[D_f_gray == 0]=1.0
+    D_b_gray_copy[D_b_gray == 0] = 1.0
+    w_f = np.multiply(np.power(D_f_gray_copy, r), image_pdf_f)
+    w_b=np.multiply(np.power(D_b_gray_copy, r), image_pdf_b)
+    w_f[D_f_gray == 0] = 1.0
+    w_b[D_b_gray == 0] = 1.0
+    denominator = w_f+w_b
+    denominator_copy = np.copy(denominator)
+    denominator_copy[denominator == 0] = 1.0
+    output = np.array((w_f/denominator_copy), np.float32)
+    output[D_f_gray == 0] = 1.0
+    output[D_b_gray == 0] = 0.0
+    output[denominator == 0] = 0.0
+
+    return output
+
+
+# Prepare binary video from color
+def pereapr_binary_video_from_color(person_video_path, binari_video_path):
+
+    # Extract binary mask from orig video:
+    input_video_person = cv2.VideoCapture(person_video_path)
+    width = int(input_video_person.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(input_video_person.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    res = (width, height)
+    fps = input_video_person.get(cv2.CAP_PROP_FPS)
+    fourcc = int(input_video_person.get(cv2.CAP_PROP_FOURCC))
+    out_video = cv2.VideoWriter(binari_video_path,fourcc, fps, res,isColor=False)
+
+    while input_video_person.isOpened():
+
+        ret_person, frame_person = input_video_person.read()
+        if ret_person is True:
+            tmp=cv2.cvtColor(frame_person, cv2.COLOR_BGR2GRAY)
+            ret, thresh = cv2.threshold(tmp, 240, 255, cv2.THRESH_BINARY)
+            tmp[thresh == 255] = 0
+            tmp[np.invert(thresh) == 255] = 255
+            out_video.write(tmp)
+
+        else:
+            break
+
+    input_video_person.release()
+    out_video.release()
